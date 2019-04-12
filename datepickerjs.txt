@@ -1,0 +1,497 @@
+/*
+ * Copyright (c) 2013 Motive, Inc.
+ * All rights reserved.
+ *
+ * Motive, Inc. Proprietary/Trade Secret ; Information
+ * Not to be disclosed or used except in accordance with applicable agreements.
+ */
+define([
+	'jquery',
+	'jqueryui',
+	'backbone.marionette',
+	'underscore',
+	'logger',
+	'i18n!modules/workflow/nls/Messages',
+	'tpl!extensions/workflow/templates/WorkflowForm.html'
+], function ($, Dialog, Marionette, _, Logger, i18n, Template) {
+	'use strict';
+	return Marionette.ItemView.extend({
+		template: Template,
+		local: {},
+		templateHelpers: function () {
+			var self = this;
+			return {
+				i18n: i18n,
+				getBody: function () {
+					return self.model.get('body') || "";
+				},
+				getButton: function () {
+					return self.model.get('button') || "";
+				},
+				getBackBtnFlag: function () {
+					return false;
+				}
+			}
+		},
+		events: {
+			"click #appointmentLink": "launchAppointmentDatePicker",
+			"click .calender-date-button": "selectDateTime",
+			"click #save-new-appointment": "saveAppointment",
+			"click #cancel-appointment": "cancelAppointment",
+			"click #back-btn-wf": "backToPrevious",
+			"mouseover .tooltipLink": "openTooltip",
+			"click #learn-more-icon": "learnMoreDispatch",
+			"click .accordian-link-custom": "accordianAction",
+			"click #next-month": "launchNextMonth",
+			"click #prev-month": "launchPrevMonth",
+			"click #backButton": "backToPrevious"
+		},
+		initialize: function (options) {
+			var self = this;
+			this.local.currPage = 0;
+			this.local.year = 0;
+			this.local.day = 0;
+			this.$el.on('click', '#button', _.bind(self.onPress, this));
+			this.$el.on('click', '#refresh', _.bind(self.onRefresh, this));
+			//this.$el.on('keyup', '#prompt', _.bind(self.checkForText, this));
+			this.controller = options.controller;
+			console.dir(this.model);
+		},
+        //After render check for outages text and draw the table
+        onShow: function () {
+            var SIOutageListElem = document.getElementById('SIOutageList'),
+				isBackBtnHiddenElem = document.getElementById('isBackBtnHidden'),
+                serviceOrderList = document.getElementById('serviceOrderList');
+
+            if (SIOutageListElem) {
+                this.createNoSyncOutagesTable(SIOutageListElem);
+            }
+            if (serviceOrderList) {
+                this.createPendingServiceOrderTable(serviceOrderList);
+			}
+			if (isBackBtnHiddenElem) {
+				document.getElementById("backButton").style.visibility = 'hidden';
+				document.getElementById("backButton").style.position = 'absolute';
+			} else {
+				document.getElementById("backButton").style.visibility = 'visible';
+				document.getElementById("backButton").style.position = 'relative';
+			}
+
+        },
+		onRender: function () {
+			Logger.debug("WorkflowForm: onRender");
+			// focus control
+		},
+		onPress: function (event) {
+			Logger.debug("WorkflowPrompt: onPress");
+			var data = {},errorFlag = false,errorMsg="",isRadioInput = false;
+			if(document.getElementById('clear-cached-dispatch-data')){
+				App.restoreDataFomCache = false;
+			}
+			document.getElementById('error-display-contactemail') ? document.getElementById('error-display-contactemail').innerHTML = "" :0;
+			document.getElementById('error-display-contactNumber') ? document.getElementById('error-display-contactNumber').innerHTML = "" :0;
+			document.getElementById('error-display-contactName') ? document.getElementById('error-display-contactName').innerHTML = "" :0;
+
+			document.getElementById('contactEmail') ? document.getElementById('contactEmail').style.border = "1px solid #FFCC00" : 0;
+			document.getElementById('contactPhoneNumber') ? document.getElementById('contactPhoneNumber').style.border = "1px solid #FFCC00" : 0;
+			document.getElementById('name') ? document.getElementById('name').style.border = "1px solid #FFCC00" : 0;
+
+			if (!App.restoreDataFomCache) {
+				// detect all input, select, textarea elements
+				var elements = this.$el.find("input, select, textarea");
+
+				for (var i = 0; i < elements.length; i++) {
+					elements[i].type === 'radio' ? isRadioInput = true : console.log('');
+
+					if (elements[i].value) {
+						data[elements[i].name] = elements[i].value;
+						if (elements[i].name == 'contactEmail') {
+							if (!this.validateEmail(elements[i])) {
+								document.getElementById('error-display-contactemail').innerHTML = "Invalid Email";
+								document.getElementById('contactEmail').style.border = "1px solid red";
+								errorFlag = true;
+							}else {
+								document.getElementById('error-display-contactemail').innerHTML = "";
+							}
+						} else if (elements[i].name == "contactPhoneNumber") {
+							if (!this.validatePhonenumber(elements[i])) {
+								document.getElementById('error-display-contactNumber').innerHTML = "Invalid Contact Number";
+								document.getElementById('contactPhoneNumber').style.border = "1px solid red";
+								errorFlag = true;
+							}else {
+								document.getElementById('error-display-contactNumber').innerHTML = "";
+							}
+						}
+					}
+					else {
+						if (elements[i].name == 'contactEmail') {
+							document.getElementById('error-display-contactemail').innerHTML = "This field is required";
+							document.getElementById('contactEmail').style.border = "1px solid red";
+						}else if(elements[i].name == "contactPhoneNumber"){
+							document.getElementById('error-display-contactNumber').innerHTML = "This field is required";
+							document.getElementById('contactPhoneNumber').style.border = "1px solid red";
+						}else if(elements[i].name == "contactName"){
+							document.getElementById('error-display-contactName').innerHTML = "This field is required";
+							document.getElementById('name').style.border = "1px solid red";
+						}else{
+							isRadioInput ? errorMsg = 'Please choose an option' : errorMsg = "Please fill all required fields";
+							document.getElementById('error-display').innerHTML = errorMsg;
+							document.getElementById('error-display').style.display = "block";
+						}
+						errorFlag = true;
+						break;
+					}
+				}
+			}
+			
+            if (!data.hasOwnProperty('contactEmail'))
+                data = App.dispatchData;
+            else
+                App.dispatchData = data;
+            
+			console.dir(data);
+            
+			if(!errorFlag){
+				var self = this;
+				window.App.isEditButton = document.getElementById("isBackEnabled") ? document.getElementById("isBackEnabled").value : false;
+				//this.$('#refresh').show();
+				//		var data = {};
+				//			data[this.model.get("holder")] = $prompt.val('suspended');
+				this.controller.signal(this.model.get("signal"), data);
+			}
+			event.stopPropagation();
+		},
+		onRefresh: function (event) {
+			Logger.debug("Refresh pressed");
+
+			/* var newFragment = 'customerProfile';
+
+			window.App.vent.trigger("workflowComplete");
+            Backbone.history.loadUrl(Backbone.history.getFragment(), true);
+            event.stopPropagation(); */
+
+			var data = {};
+			//data[this.model.get("holder")] = 'suspended';
+			console.log("FAhadahdhahd " + data)
+			console.log("FAhadahdhahd " + this.model.get("signal"))
+			//this.controller.signal(this.model.get("signal"), 'refresh' );
+
+			//this.model.get("signal") = 'refresh';
+			/* 	this.controller.signal('refresh', {});
+				Backbone.history.loadUrl(Backbone.history.getFragment(), true);
+				event.stopPropagation(); */
+			//		this.controller.signal(this.model.get("signal"), data);
+
+			//this.controller.event("refresh", {});
+
+			/*Backbone.history.navigate('customerProfile', true);
+
+			if (Backbone.history.fragment == newFragment) {
+				Backbone.history.fragment = null;
+				Backbone.history.loadUrl('customerProfile', true);
+				}*/
+			//Backbone.history.loadUrl(Backbone.history.fragment);
+			//Backbone.history.loadUrl();
+			//return false;
+		},
+		launchNextMonth: function () {
+			var self = this;
+			if(self.local.currPage < 11) {
+				self.local.currPage =  self.local.currPage + 1;
+			}else {
+				self.local.year = self.local.year + 1;
+				self.local.currPage =  self.local.currPage + 1 - 12;
+			}
+			self.getDays(self.local.currPage);
+		},
+		launchPrevMonth: function () {
+			var self = this;
+			if(self.local.currPage > 0) {
+				self.local.currPage =  self.local.currPage - 1;
+			}else {
+				self.local.year =  self.local.year - 1;
+				self.local.currPage =  self.local.currPage + 11;
+			}
+			self.getDays(self.local.currPage);
+		},
+		launchAppointmentDatePicker: function () {
+			var	modal = document.getElementById('customModal'),
+				btn = document.getElementById("appointmentLink"),
+				span = document.getElementsByClassName("close")[0],
+				self = this,
+				date = new Date(),
+				currentYear = date.getFullYear(),
+				currentMonth = date.getMonth(),
+				suggestedAppt = new Date(document.getElementById('suggested-date').innerText.split(' between')[0]);
+		
+			this.local.suggestedApptDate = suggestedAppt.getDate();
+			this.local.suggestedApptMonth = suggestedAppt.getMonth();
+			this.local.currPage = currentMonth;
+			this.local.year = currentYear;				
+			this.getDays(currentMonth);
+
+			document.getElementById('datepicker').style.display = "block";
+			 modal.style.display = "block";
+			 span.onclick = function () {
+			 	modal.style.display = "none";
+			 };
+		},
+		getDays: function (month) {
+			var self = this;
+			$("#dt-able").empty();
+			var mos=['January','February','March','April','May','June','July','August','September','October','Novemeber','Decemeber'],
+				day=['Sa', 'Fr', 'Th', 'We' , 'Tu', 'Mo', 'Su'], //Sa fr th we tu mo su
+				date = new Date(),
+				currentDate = date.getDate();
+				
+			$("#calender-title").html(mos[month] + " "+this.local.year)
+
+			$("#dt-able").append('<tr>');
+			for(var i = 0; i < 7; i++) {
+				$('#dt-able').prepend("<td id='dt-head'>"  + day[i] + "</td>");
+			}
+
+			$("#dt-able").append('</td>');
+
+			var firstDay = new Date(this.local.year,month, 1);
+			var lastDay = new Date(this.local.year, month+1, 0);
+
+			var currentMonthLastDday = new Date(this.local.year, this.local.currPage, 0);
+	
+			var offset = firstDay.getDay();
+
+			var dayCount = 1; 
+
+			var noOfRows = (offset > 4 && month != 1) ? 6 : 5;
+
+			for (var i = 0; i < noOfRows; i++)	{
+				$('#dt-able').append("<tr id=row-"+ i +">");
+				for(var rw = 0; rw < 7; rw++ ) {
+					var isTodayClass = (dayCount == currentDate && this.local.year == date.getFullYear() && this.local.currPage == date.getMonth()) ? "calender-today " : "",
+						isCurrentAppointmentDateClass = (this.local.suggestedApptDate == dayCount && this.local.suggestedApptMonth == this.local.currPage && this.local.year == date.getFullYear()) ? "cuurent-appointment-date" : "", //Update 
+						isDisabledClass = ((dayCount - currentDate) >= 0 && (dayCount - currentDate) <= 7 &&  this.local.year == date.getFullYear() && this.local.currPage == date.getMonth()) ? "avaiable-dates " : "disabled-date ";
+
+					if(currentMonthLastDday.getDate() - currentDate < 7){
+						var extraDaysTobeCarryForwarded = 7 - (currentMonthLastDday.getDate() - currentDate);
+						if(this.local.currPage === 11)
+							isDisabledClass += (dayCount <= extraDaysTobeCarryForwarded && this.local.year === date.getFullYear() + 1 && this.local.currPage == date.getMonth() + 1) ? "avaiable-dates " : "";
+						else
+							isDisabledClass += (dayCount <= extraDaysTobeCarryForwarded && this.local.year === date.getFullYear() && this.local.currPage == date.getMonth() + 1) ? "avaiable-dates " : "";							
+					}
+
+					if(offset == 0)	{
+						$('#' + "row-"+ i).append("<td  id='" + "cell-" + dayCount + "'>" +
+						"<input type='button' class='btn btn-default calender-date-button " + isDisabledClass +isTodayClass + isCurrentAppointmentDateClass +"' id ='day_val" + dayCount + "'" + " value= '" + dayCount + "' >" +
+						'</td>' );						
+
+						if(dayCount >= lastDay.getDate()) {
+							break;
+						}
+						dayCount++;
+					}else {
+						$('#' + "row-"+ i).append('<td>' +'</td>' );
+							offset--;
+					}
+				}
+				$('#dt-able').append('</tr>');
+			}
+			event.preventDefault();
+		},
+		selectDateTime: function (event) {
+			if(this.local.day){
+				document.getElementById("day_val"+this.local.day).style.background = "#ffffff";
+				document.getElementById("day_val"+this.local.day).style.color = "#00853F";
+			}
+			this.local.day = document.getElementById(event.target.id).value;
+			document.getElementById(event.target.id).style.background = "#428bca";
+			document.getElementById(event.target.id).style.color = "#ffffff";
+		},
+		saveAppointment: function () {
+			App.restoreDataFomCache = false;
+			document.getElementById('customModal').style.display = 'none';
+			var dateFormatted = this.local.year +"/"+  (this.local.currPage + 1)  + "/" + this.local.day ;
+			var date = new Date(dateFormatted);
+			document.getElementById("flagValue").value = "default";
+			document.getElementById("dateFormatted").value = dateFormatted;
+
+			if(date != "Invalid Date"){
+				var suggestedDate = this.formatDate(date);
+				var tpl = suggestedDate + " between " + document.getElementById("timeSlot").value;
+				document.getElementById('suggested-date').innerText = tpl;
+				document.getElementById("dateTimePickerInput").value = tpl;
+				document.getElementById("flagValue").value = "override";
+				this.local.suggestedApptDate = date.getDay();
+				this.local.suggestedApptMonth = date.getMonth();
+			}
+			
+		},
+		formatDate: function (date) {
+			var monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+			var daysNames = ["Sunday","Monday","Tuesday","Wednesday","Thrusday","Friday","Saturday"];
+		  
+			var dayIndex = date.getDay();
+			var day = date.getDate();
+			var monthIndex = date.getMonth();
+		  
+			return daysNames[dayIndex] + ', ' + monthNames[monthIndex] + ' ' + day;
+		},
+		cancelAppointment: function () {			
+			document.getElementById('customModal').style.display = 'none';
+		},
+		backToPrevious: function () {
+			if(document.getElementById('isFirstNode'))
+				App.router.navigate("myInfo", {trigger: true, replace: true});
+			else
+				this.controller.signal("back", {});
+			App.restoreDataFomCache = true;	
+			window.App.isEditButton = document.getElementById("isBackEnabled") ? document.getElementById("isBackEnabled").value : false;
+            event.stopPropagation();
+		},
+		openTooltip: function () {
+			$('[data-toggle="tooltip"]').tooltip();
+		},
+		validateEmail: function (emailField){
+			var reg = /^([A-Za-z0-9_\-\.])+\@([A-Za-z0-9_\-\.])+\.([A-Za-z]{2,4})$/;
+			if (reg.test(emailField.value) == false) {
+				return false;
+			}	
+			return true;
+	
+		},
+		validatePhonenumber: function(inputtxt) {
+			var phoneno = /^[\+]?[(]?[0-9]{3}[)]?[-\s\.]?[0-9]{3}[-\s\.]?[0-9]{4,6}$/im;
+			if (inputtxt.value.match(phoneno))
+				return true;
+			else 
+				return false;
+		},
+		learnMoreDispatch: function () {
+			document.getElementById('learn-more-content').style.display == 'none' ? document.getElementById('learn-more-content').style.display = 'block' : document.getElementById('learn-more-content').style.display = 'none'; 
+			document.getElementById('learn-more-link-icon').className == 'icon-caret-right' ? document.getElementById('learn-more-link-icon').className = 'icon-caret-down' : document.getElementById('learn-more-link-icon').className = 'icon-caret-right'; 			
+		},
+		accordianAction: function (event) {
+			console.log(event);
+			var numberOfRows = (document.getElementById('innerAccordion').childElementCount)/2,
+				selectedElementId =  event.currentTarget.id;
+
+			document.getElementsByClassName(selectedElementId)[0].style.display == 'none' ? (document.getElementsByClassName(selectedElementId)[0].style.display = 'block') : (document.getElementsByClassName(selectedElementId)[0].style.display = 'none');
+			document.getElementById(selectedElementId).children[0].className == 'icon-caret-right' ? (document.getElementById(selectedElementId).children[0].className = 'icon-caret-down') : (document.getElementById(selectedElementId).children[0].className = 'icon-caret-right');
+			
+			for(var i = 0; i < numberOfRows ; i++){
+				var otherItemsClassName = "accordian-custom-link-" + i;
+				if(otherItemsClassName != selectedElementId){
+					document.getElementsByClassName(otherItemsClassName)[0].style.display = 'none';
+					document.getElementById(otherItemsClassName).children[0].className = 'icon-caret-right';
+				}
+			}
+		},
+        createNoSyncOutagesTable: function (SIOutageListElem) {
+            var SIOutageListValue = JSON.parse(SIOutageListElem.innerHTML);
+
+            var table = document.createElement('table');
+            table.className = 'table table-bordered';
+
+            var thead = document.createElement('thead');
+            var tbody = document.createElement('tbody');
+
+            var trhead = document.createElement('tr');
+
+            var th1 = document.createElement('th');
+            var th2 = document.createElement('th');
+            var th3 = document.createElement('th');
+
+            var outageIdHeader = document.createTextNode("OutageId");
+            var outageNotesHeader = document.createTextNode("Outage Notes");
+            var outageStatusHeader = document.createTextNode("Outage Status");
+
+            th1.appendChild(outageIdHeader);
+            th2.appendChild(outageNotesHeader);
+            th3.appendChild(outageStatusHeader);
+
+            trhead.appendChild(th1);
+            trhead.appendChild(th2);
+            trhead.appendChild(th3);
+
+            thead.appendChild(trhead)
+
+            table.appendChild(thead);
+
+            for (var i = 0; i < SIOutageListValue.length; i++) {
+                var tr = document.createElement('tr');
+
+                var td1 = document.createElement('td');
+                var td2 = document.createElement('td');
+                var td3 = document.createElement('td');
+
+                var outageIdCol = document.createTextNode(SIOutageListValue[i]["OutageId"]);
+                var outageNotesCol = document.createTextNode(SIOutageListValue[i]["OutageNotes"]);
+                var outageStatusCol = document.createTextNode(SIOutageListValue[i]["OutageStatus"]);
+
+                td1.appendChild(outageIdCol);
+                td2.appendChild(outageNotesCol);
+                td3.appendChild(outageStatusCol);
+                tr.appendChild(td1);
+                tr.appendChild(td2);
+                tr.appendChild(td3);
+
+                tbody.appendChild(tr);
+            }
+            table.appendChild(tbody);
+            document.getElementById('showData').appendChild(table);
+        },
+        createPendingServiceOrderTable: function (serviceOrderList) {
+            var serviceOrderListValue = JSON.parse(serviceOrderList.innerHTML);
+
+            var table = document.createElement('table');
+            table.className = 'table table-bordered';
+
+            var thead = document.createElement('thead');
+            var tbody = document.createElement('tbody');
+
+            var trhead = document.createElement('tr');
+
+            var th1 = document.createElement('th');
+            var th2 = document.createElement('th');
+            var th3 = document.createElement('th');
+
+            var outageIdHeader = document.createTextNode("Order Number");
+            var outageNotesHeader = document.createTextNode("Order Status");
+            var outageStatusHeader = document.createTextNode("Due Date");
+
+            th1.appendChild(outageIdHeader);
+            th2.appendChild(outageNotesHeader);
+            th3.appendChild(outageStatusHeader);
+
+            trhead.appendChild(th1);
+            trhead.appendChild(th2);
+            trhead.appendChild(th3);
+
+            thead.appendChild(trhead)
+
+            table.appendChild(thead);
+
+            for (var i = 0; i < serviceOrderListValue.length; i++) {
+                var tr = document.createElement('tr');
+
+                var td1 = document.createElement('td');
+                var td2 = document.createElement('td');
+                var td3 = document.createElement('td');
+
+                var orderNumberCol = document.createTextNode(serviceOrderListValue[i]["OrderNumber"]);
+                var orderStatusCol = document.createTextNode(serviceOrderListValue[i]["OrderStatus"]);
+                var dueDateCol = document.createTextNode(serviceOrderListValue[i]["DueDate"]);
+
+                td1.appendChild(orderNumberCol);
+                td2.appendChild(orderStatusCol);
+                td3.appendChild(dueDateCol);
+                tr.appendChild(td1);
+                tr.appendChild(td2);
+                tr.appendChild(td3);
+
+                tbody.appendChild(tr);
+            }
+            table.appendChild(tbody);
+            document.getElementById('showData').appendChild(table);
+        }
+	});
+});

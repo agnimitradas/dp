@@ -1,0 +1,39 @@
+<div class="row date-picker-content">
+                <div class="col-sm-6 col-xs-6 col-md-6 col-lg-6">
+                    <div id="datepicker" style="display: none;">
+                        <h4 id="month-title"></h4>
+                        <span id="prev-month" class="icon-caret-left" style="font-size: 20px;">&nbsp;</span> <span id="calender-title">&nbsp;</span> <span id="next-month" class="icon-caret-right" style="font-size: 20px;">&nbsp;</span>
+                        <table id="dt-able" style="margin-bottom: 20px;">
+                            <tbody>
+                                <tr>
+                                    <td class="day_val"></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <input type="hidden" name="earliestDateValue" id="dateTimePickerInput" value="#{earliestDateValue}" /> <input type="hidden" name="flagValue" id="flagValue" value="false" /> <label for="Time"> Time: </label> <select style="padding: 10px; border-radius: 20px; width: 200px;" name="timeSlot">
+                            <option value="firstSlot">8:00 AM - 12:00 PM</option>
+                            <option value="secondSlot">12:00PM - 4:00 PM</option>
+                            <option value="thirdSlot">4:00 PM - 8:00 PM</option>
+                            <option value="fourthSlot">8:00 PM - 12:00 AM</option>
+                            <option value="fifthSlot">12:00 AM - 4:00 AM</option>
+                            <option value="sixthSlot">4:00 AM - 8:00 AM</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="col-sm-6 col-xs-6 col-md-6">
+                    <div class="legends-container" style="position: relative; top: 150px;">
+                        <div class="todays-date-legend">
+                            <div style="height: 15px; width: 15px; background: #53575a; margin-right: 5px; display: inline-block;"></div>
+                            Today's Date
+                        </div>
+                        <div class="todays-date-legend">
+                            <div style="height: 15px; width: 15px; background: #00853F; margin-right: 5px; display: inline-block;"></div>
+                            Appointment Date
+                        </div>
+                        <div class="todays-date-legend">
+                            <div style="height: 14px; width: 14px; background: white; margin-right: 5px; display: inline-block; border: .5px solid black;"></div>
+                            Available Date
+                        </div>
+                    </div>
+                </div>
+            </div>
